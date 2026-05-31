@@ -8,8 +8,8 @@ from datetime import datetime
 # ==========================================================
 # CONFIG
 # ==========================================================
-st.set_page_config(page_title="Crypto Quant Desk v4", layout="wide")
-st.title("🏦 Crypto Quant Desk v4 — Multi-Asset Institutional Scanner")
+st.set_page_config(page_title="Crypto Quant Desk v4 FIXED", layout="wide")
+st.title("🏦 Crypto Quant Desk v4 — Multi-Asset Institutional Scanner (FIXED)")
 
 # ==========================================================
 # SESSION STATE
@@ -18,7 +18,7 @@ if "signal_log" not in st.session_state:
     st.session_state.signal_log = []
 
 # ==========================================================
-# UNIVERSE (MULTI-ASSET)
+# UNIVERSE
 # ==========================================================
 ASSETS = ["BTC-USD", "ETH-USD", "BNB-USD", "SOL-USD", "LINK-USD", "XRP-USD"]
 
@@ -56,7 +56,6 @@ def load_data(symbol):
 def ema(series, period):
     return series.ewm(span=period, adjust=False).mean()
 
-
 def rsi(series, period=14):
     delta = series.diff()
     gain = np.where(delta > 0, delta, 0)
@@ -67,7 +66,6 @@ def rsi(series, period=14):
 
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
-
 
 def atr(df, period=14):
     high = df["High"]
@@ -82,9 +80,6 @@ def atr(df, period=14):
 
     return tr.rolling(period).mean()
 
-# ==========================================================
-# POWER LAW
-# ==========================================================
 def power_law(df):
     df = df.copy()
     df["Date"] = pd.to_datetime(df["Date"])
@@ -103,12 +98,11 @@ def power_law(df):
     return df
 
 # ==========================================================
-# CORE ENGINE (UNIFIED)
+# ENGINE PER ASSET
 # ==========================================================
 def analyze_asset(asset):
 
     df = load_data(asset)
-
     if df is None or df.empty or len(df) < 200:
         return None
 
@@ -129,15 +123,12 @@ def analyze_asset(asset):
     ema29 = float(df["EMA29"].iloc[-1])
     ema69 = float(df["EMA69"].iloc[-1])
     ema169 = float(df["EMA169"].iloc[-1])
-
     rsi_now = float(df["RSI"].iloc[-1])
 
     trend_ok = price > ema169
 
-    # EMA Ribbon
     ema_max = max(ema9, ema29, ema69, ema169)
     ema_min = min(ema9, ema29, ema69, ema169)
-
     compression = (ema_max - ema_min) / ema69
 
     if ema9 > ema29 > ema69 > ema169:
@@ -149,16 +140,13 @@ def analyze_asset(asset):
     else:
         ribbon = "NEUTRAL"
 
-    # SCORE
     trend_score = 60 if trend_ok else 0
     momentum_score = np.clip((40 - rsi_now) * 1.5, 0, 25)
     quality_score = 15 if rsi_now < 45 else 5 if rsi_now < 55 else 0
-
     ribbon_score = 15 if ribbon == "BULLISH" else 8 if ribbon == "COMPRESSION" else 3 if ribbon == "NEUTRAL" else 0
 
     score = trend_score + momentum_score + quality_score + ribbon_score
 
-    # ATR PROBABILITY
     def probability_engine(df, gain_atr, loss_atr, samples=250):
 
         wins = 0
@@ -197,6 +185,7 @@ def analyze_asset(asset):
 
     return {
         "asset": asset,
+        "df": df,
         "price": price,
         "score": score,
         "prob": prob,
@@ -217,18 +206,14 @@ for asset in ASSETS:
         results.append(res)
 
 df_results = pd.DataFrame(results)
-
-# ==========================================================
-# RANKING
-# ==========================================================
 df_ranked = df_results.sort_values("final_score", ascending=False)
 
 # ==========================================================
-# UI
+# UI RANKING
 # ==========================================================
 st.subheader("🥇 Ranking de Oportunidades (Score + Probabilidade)")
 
-st.dataframe(df_ranked, use_container_width=True)
+st.dataframe(df_ranked[["asset", "price", "score", "prob", "final_score", "ribbon"]])
 
 top = df_ranked.iloc[0]
 
@@ -237,19 +222,29 @@ st.success(f"🔥 TOP SETUP: {top['asset']} | Score: {top['score']:.1f} | Prob: 
 st.divider()
 
 # ==========================================================
-# DETAIL VIEW TOP ASSET
+# CHART (FIXED — EMAs RESTAURADAS)
 # ==========================================================
-st.subheader(f"📊 Detalhe do Melhor Setup: {top['asset']}")
+st.subheader(f"📊 Detalhe Completo: {top['asset']}")
 
-df_top = load_data(top["asset"])
-df_top = power_law(df_top)
+df_top = top["df"]
 
 fig = go.Figure()
 
-fig.add_trace(go.Scatter(x=df_top["Date"], y=df_top["Close"], name=top["asset"]))
-fig.add_trace(go.Scatter(x=df_top["Date"], y=df_top["PowerLaw"], name="Power Law", line=dict(dash="dot")))
+fig.add_trace(go.Scatter(x=df_top["Date"], y=df_top["Close"], name="Price"))
 
-fig.update_layout(height=600, yaxis_type="log")
+fig.add_trace(go.Scatter(x=df_top["Date"], y=df_top["EMA9"], name="EMA 9"))
+fig.add_trace(go.Scatter(x=df_top["Date"], y=df_top["EMA29"], name="EMA 29"))
+fig.add_trace(go.Scatter(x=df_top["Date"], y=df_top["EMA69"], name="EMA 69"))
+fig.add_trace(go.Scatter(x=df_top["Date"], y=df_top["EMA169"], name="EMA 169"))
+
+fig.add_trace(go.Scatter(
+    x=df_top["Date"],
+    y=df_top["PowerLaw"],
+    name="Power Law",
+    line=dict(dash="dot")
+))
+
+fig.update_layout(height=650, yaxis_type="log")
 
 st.plotly_chart(fig, use_container_width=True)
 
@@ -262,5 +257,5 @@ st.write({
     "Top Asset": top["asset"],
     "Final Score": top["final_score"],
     "Probabilidade ATR": top["prob"],
-    "Modelo": "Unified EMA Ribbon + RSI + ATR + Power Law"
+    "Modelo": "EMA Ribbon + RSI + ATR Probability + Power Law"
 })
